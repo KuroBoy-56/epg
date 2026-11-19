@@ -18,8 +18,18 @@ Así, el panel, la web player y cualquier app (TiviMate, Smarters…) le ponen l
 
 1. **Primero** sube al panel el archivo `includes/epg_engine.php` nuevo (está en `subir-al-panel/includes/`). Sin él, el panel confunde canales que se llaman parecido en países distintos, como «[IZZI] ESPN» y «[Flow AR] ESPN».
 2. Panel → **Guía EPG**. Si eres distribuidor, es tu página **Guía EPG**.
-3. En la lista de guías **borra todo** y deja solo esta línea:
-   `https://TUDOMINIO.com/epg/guia.xml.gz`
+3. En la lista de guías pon **tu guía en la primera línea** y deja debajo las públicas, para que los servicios que no estén en tu guía también tengan programación:
+   ```
+   https://TUDOMINIO.com/epg/guia.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_MX1.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_CO1.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_AR1.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_CL1.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_PE1.xml.gz
+   https://epgshare01.online/epgshare01/epg_ripper_US2.xml.gz
+   https://epg.pw/xmltv/epg_US.xml.gz
+   ```
+   Si dos guías tienen el mismo canal, gana la primera: tus servicios usan siempre la guía a medida.
 4. Pulsa **Guardar** y luego **Actualizar ahora**.
 
 Ya está: las apps usan la guía del servidor IPTV si la tiene y, si no, esta. El panel la vuelve a leer solo cada 12 horas.
@@ -48,19 +58,23 @@ Abre `https://TUDOMINIO.com/epg/reporte.html`. Ahí ves:
 
 Los canales 24/7, de eventos, PPV y de pases deportivos no se buscan, porque no tienen programación fija. Se cambia en `config.php`, en `skip_groups`.
 
-## 5. Si tu proveedor agrega canales
+## 5. Tus servicios IPTV (uno o varios)
 
-El generador trae tu lista de hoy en `canales.json`. Para que se actualice sola cada día, pon tu línea en `config.php`:
+El generador trae tu lista de hoy en `canales.json`. Para que la lista se actualice sola cada día, y para sumar **otros servicios**, pon tus líneas en `config.php`. Basta con el enlace M3U que te da el panel de cada servicio:
 
 ```php
-'xtream' => [
-    'url' => 'http://tu-servidor.com:80',
-    'user' => 'tu_usuario',
-    'pass' => 'tu_contraseña',
+'lineas' => [
+    ['nombre' => 'LatMPX', 'm3u' => 'http://servidor1.com:80/get.php?username=USUARIO&password=CLAVE&type=m3u_plus'],
+    ['nombre' => 'Servicio 2', 'm3u' => 'http://servidor2.com/get.php?username=USUARIO&password=CLAVE&type=m3u_plus'],
 ],
 ```
 
-`config.php` no se puede abrir desde el navegador (lo bloquea `.htaccess`), así que tus datos quedan solo en el hosting.
+- Todas las líneas van a **la misma** `guia.xml.gz`: no cambias la URL en el panel.
+- Cada canal se empareja con su nombre exacto en su servicio. Si dos servicios usan el mismo nombre, se toma una sola vez.
+- Con un enlace `get.php` el generador pide solo los canales en vivo (no descarga películas ni series). Con otro tipo de enlace `.m3u`, lee la lista, se salta películas y series, y no guarda la lista porque lleva tus datos.
+- Si un servidor no responde ese día, se usa la lista del día anterior de esa línea, y los demás servicios siguen normal.
+- En `reporte.html` cada servicio aparece aparte («Servicio 2 › MEXICO»).
+- `config.php` no se puede abrir desde el navegador (lo bloquea `.htaccess`), así que tus datos quedan solo en el hosting.
 
 ## 6. Corregir un canal a mano
 

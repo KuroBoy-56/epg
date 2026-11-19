@@ -83,7 +83,7 @@ const SYNONYMS = ['dsports' => 'directv sports', 'chv' => 'chilevision', 'natgeo
 
 const NOISE = ['canal', 'channel', 'tv', 'television', 'tele', 'de', 'del', 'la', 'el', 'los', 'las', 'the',
     'hd', 'fhd', 'uhd', 'sd', '4k', '8k', 'hevc', 'h265', 'h264', 'fps', 'backup', 'bkp', 'alt', 'vip',
-    'east', 'este', 'feed', 'live', 'envivo', 'vivo', 'en', 'oficial', 'official', 'senal', 'network'];
+    'east', 'este', 'feed', 'envivo', 'vivo', 'en', 'oficial', 'official', 'senal', 'network'];
 
 // "CL | CANAL 13 OPC.1 (720p)" -> ['t' => ['13'], 'k' => '13', 'cc' => 'cl', 'call' => null]
 function canon(string $raw): array {
@@ -119,6 +119,9 @@ function canon(string $raw): array {
                 return ' ';
             }
         }
+        if (preg_match('/\b(pacific|pacifico|west|oeste)\b/', $m[1])) {
+            return ' pacific ';
+        }
         if (preg_match('/^\s*([kw][a-z]{2,3})(?:-(?:tv|dt|cd|ld))?\s*$/', $m[1], $c)) {
             $call = $call ?? strtoupper($c[1]);
         } elseif (!preg_match('/antes|antiguo|solo|\d{3,4}p|24\/7|encoder|^\s*[a-z]?\s*$/', $m[1])) {
@@ -130,6 +133,7 @@ function canon(string $raw): array {
     $s = preg_replace('/\bopc(?:ion)?\.?\s*#?\s*\d+\b|\bop\.?\s*\d+\b|#\s*\d+|\bopc\b/', ' ', $s);
     $s = str_replace(['&', "'", '´', '’'], '', $s);
     $s = str_replace('+', ' plus ', $s);
+    $s = preg_replace('/\b(pacifico|west|oeste)\b/', 'pacific', $s);
     $s = preg_replace('/[^a-z0-9]+/', ' ', $s);
     $s = ' ' . trim($s) . ' ';
     foreach (CC_WORDS as $w => $c) {
@@ -214,30 +218,120 @@ function group_cc(string $g): ?string {
 
 // ---------------------------------------------------------------- lista de canales
 
+// Canales de todas tus líneas IPTV (config.php › 'lineas') más canales.json.
+// Cada línea se guarda en cache/linea_N.json: si un día su servidor no responde, se usa la copia anterior.
 function load_channels(array $cfg): array {
-    $x = $cfg['xtream'] ?? [];
-    if (!empty($x['url']) && !empty($x['user'])) {
-        $base = rtrim($x['url'], '/') . '/player_api.php?username=' . rawurlencode($x['user']) . '&password=' . rawurlencode((string) $x['pass']);
-        $cats = json_decode((string) http_get($base . '&action=get_live_categories', 60), true);
-        $streams = json_decode((string) http_get($base . '&action=get_live_streams', 180), true);
+    $lines = $cfg['lineas'] ?? [];
+    $old = $cfg['xtream'] ?? []; // configuración vieja de una sola línea
+    if (!empty($old['url']) && !empty($old['user'])) {
+        $lines[] = $old;
+    }
+    $all = [];
+    foreach (array_values($lines) as $i => $line) {
+        $line = is_string($line) ? ['m3u' => $line] : (array) $line;
+        $label = trim((string) ($line['nombre'] ?? '')) ?: 'Línea ' . ($i + 1);
+        $cache = EPG_DIR . '/cache/linea_' . ($i + 1) . '.json';
+        $list = line_channels($line);
+        if ($list) {
+            file_put_contents($cache, json_encode($list, JSON_UNESCAPED_UNICODE), LOCK_EX);
+            say("$label: " . count($list) . ' canales en vivo');
+        } else {
+            $list = json_decode((string) @file_get_contents($cache), true) ?: [];
+            say("$label: no respondió; se usa la copia anterior (" . count($list) . ' canales)');
+        }
+        foreach ($list as $ch) {
+            $ch['group'] = count($lines) > 1 ? $label . ' › ' . $ch['group'] : $ch['group'];
+            $all[] = $ch;
+        }
+    }
+    if (!$lines || !empty($cfg['usar_canales_json'])) {
+        foreach (json_decode((string) @file_get_contents(EPG_DIR . '/canales.json'), true) ?: [] as $ch) {
+            $all[] = $ch;
+        }
+    }
+    // el mismo nombre en dos líneas es el mismo canal
+    $seen = [];
+    $out = [];
+    foreach ($all as $ch) {
+        $k = mb_strtolower(trim((string) ($ch['name'] ?? '')), 'UTF-8');
+        if ($k !== '' && !isset($seen[$k])) {
+            $seen[$k] = true;
+            $out[] = $ch;
+        }
+    }
+    return $out;
+}
+
+// Una línea: enlace M3U (get.php?username=…&password=…), o url + user + pass, o solo un enlace .m3u
+function line_channels(array $line): array {
+    $url = trim((string) ($line['m3u'] ?? ''));
+    $user = (string) ($line['user'] ?? '');
+    $pass = (string) ($line['pass'] ?? '');
+    $base = rtrim((string) ($line['url'] ?? ''), '/');
+    if ($url !== '' && preg_match('#^(https?://[^/?\#]+)/get\.php\?#i', $url, $m)) {
+        parse_str((string) parse_url($url, PHP_URL_QUERY), $q);
+        if (!empty($q['username'])) {
+            [$base, $user, $pass] = [$m[1], (string) $q['username'], (string) ($q['password'] ?? '')];
+        }
+    }
+    if ($base !== '' && $user !== '') {
+        $api = $base . '/player_api.php?username=' . rawurlencode($user) . '&password=' . rawurlencode($pass);
+        $cats = json_decode((string) http_get($api . '&action=get_live_categories', 60), true);
+        $streams = json_decode((string) http_get($api . '&action=get_live_streams', 180), true);
         if (is_array($cats) && is_array($streams) && $streams) {
             $names = [];
             foreach ($cats as $c) {
                 $names[(string) ($c['category_id'] ?? '')] = (string) ($c['category_name'] ?? '');
             }
             $list = [];
-            foreach ($streams as $s) {
-                $list[] = ['name' => (string) ($s['name'] ?? ''), 'epg' => (string) ($s['epg_channel_id'] ?? ''),
-                    'group' => $names[(string) ($s['category_id'] ?? '')] ?? ''];
+            foreach ($streams as $st) {
+                $list[] = ['name' => (string) ($st['name'] ?? ''), 'epg' => (string) ($st['epg_channel_id'] ?? ''),
+                    'group' => $names[(string) ($st['category_id'] ?? '')] ?? ''];
             }
-            file_put_contents(EPG_DIR . '/canales.json', json_encode($list, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT), LOCK_EX);
-            say('Lista de canales actualizada desde tu servidor: ' . count($list));
             return $list;
         }
-        say('No se pudo leer la lista del servidor IPTV; se usa canales.json');
+        if ($url === '') {
+            return [];
+        }
     }
-    $list = json_decode((string) @file_get_contents(EPG_DIR . '/canales.json'), true);
-    return is_array($list) ? $list : [];
+    return $url !== '' ? m3u_channels($url) : [];
+}
+
+// Lee una lista M3U sin guardarla entera: solo los canales en vivo (no películas ni series).
+function m3u_channels(string $url): array {
+    $tmp = EPG_DIR . '/cache/lista.m3u.part';
+    $fp = fopen($tmp, 'w');
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [CURLOPT_FILE => $fp, CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 5,
+        CURLOPT_CONNECTTIMEOUT => 20, CURLOPT_TIMEOUT => 600, CURLOPT_USERAGENT => 'Mozilla/5.0 EPG-Builder']);
+    curl_exec($ch);
+    $ok = !curl_errno($ch) && (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE) === 200;
+    curl_close($ch);
+    fclose($fp);
+    $list = [];
+    if ($ok && ($in = fopen($tmp, 'r'))) {
+        $inf = null;
+        while (($row = fgets($in)) !== false) {
+            $row = trim($row);
+            if (strncmp($row, '#EXTINF', 7) === 0) {
+                $inf = $row;
+            } elseif ($inf !== null && $row !== '' && $row[0] !== '#') {
+                $u = strtolower($row);
+                if (strpos($u, '/movie/') === false && strpos($u, '/series/') === false
+                    && !preg_match('/\.(mp4|mkv|avi|mov)(\?|$)/', $u)) {
+                    preg_match('/tvg-id="([^"]*)"/', $inf, $id);
+                    preg_match('/group-title="([^"]*)"/', $inf, $g);
+                    preg_match('/tvg-name="([^"]*)"/', $inf, $tn);
+                    $name = trim(substr($inf, strrpos($inf, ',') + 1)) ?: ($tn[1] ?? '');
+                    $list[] = ['name' => $name, 'epg' => $id[1] ?? '', 'group' => $g[1] ?? ''];
+                }
+                $inf = null;
+            }
+        }
+        fclose($in);
+    }
+    @unlink($tmp); // la lista lleva tus datos en cada enlace: no se guarda
+    return $list;
 }
 
 function http_get(string $url, int $timeout) {

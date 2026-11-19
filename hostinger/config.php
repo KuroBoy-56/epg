@@ -6,13 +6,19 @@ return [
     // Pon una larga y al azar (mínimo 16 caracteres). Vacía = solo por cron (línea de comandos).
     'key' => '',
 
-    // Opcional: tu línea de revendedor para que la lista de canales se actualice sola.
-    // Si lo dejas vacío, se usa canales.json (la lista que viene incluida).
-    'xtream' => [
-        'url' => '',      // ejemplo: http://servidor.com:80
-        'user' => '',
-        'pass' => '',
+    // Opcional: tus líneas IPTV, para que la lista de canales se actualice sola cada día.
+    // Puedes poner varias (una por servicio). Cada una puede ser:
+    //   - el enlace M3U que te da el panel del servicio (get.php?username=...&password=...&type=m3u_plus)
+    //   - o ['nombre' => 'Servicio 2', 'url' => 'http://servidor.com:80', 'user' => '...', 'pass' => '...']
+    // 'nombre' solo sirve para ver cada servicio por separado en reporte.html.
+    // Vacío = se usa canales.json (la lista que viene incluida).
+    'lineas' => [
+        // 'http://servidor1.com:80/get.php?username=USUARIO&password=CLAVE&type=m3u_plus',
+        // ['nombre' => 'Servicio 2', 'm3u' => 'http://servidor2.com/get.php?username=USUARIO&password=CLAVE&type=m3u_plus'],
     ],
+
+    // Con 'lineas', canales.json se deja de usar. Pon true para sumarlo también.
+    'usar_canales_json' => false,
 
     // Archivo que genera (la URL que pegas en el panel: https://tudominio.com/epg/guia.xml.gz)
     'output' => 'guia.xml.gz',
