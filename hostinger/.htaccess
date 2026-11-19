@@ -1,0 +1,21 @@
+# Carpeta del generador de guía EPG
+Options -Indexes
+
+# Solo se puede abrir la guía, el reporte y build.php (este pide la clave de config.php)
+<FilesMatch "\.(php|json|lock|tmp|part|md)$">
+    Require all denied
+</FilesMatch>
+<Files "build.php">
+    Require all granted
+</Files>
+
+# La guía ya va comprimida: que el servidor no la vuelva a comprimir
+<Files "guia.xml.gz">
+    ForceType application/gzip
+    <IfModule mod_env.c>
+        SetEnv no-gzip 1
+    </IfModule>
+    <IfModule mod_headers.c>
+        Header set Cache-Control "public, max-age=3600"
+    </IfModule>
+</Files>

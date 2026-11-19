@@ -1,0 +1,7 @@
+# Generado en el hosting / datos de tu servicio (no se suben al repositorio público)
+canales.json
+guia.xml.gz
+guia.xml.gz.tmp
+reporte.html
+cache/*
+!cache/.htaccess
